@@ -2236,7 +2236,7 @@ async function openDirectSubmission() {
     showCrewScreen();
     // Keep explicit terms acceptance, on the crew screen instead of the search screen.
     const termsLabel = document.getElementById("acceptTermsCheck")?.closest("label");
-    if (termsLabel) document.getElementById("crewScreen").appendChild(termsLabel);
+    if (termsLabel) document.getElementById("crewScreen").insertBefore(termsLabel, document.getElementById("crewChangeSubmitActions"));
   } catch (error) {
     directSubmissionLoaded = false;
     lastFoundData = null;
@@ -2735,7 +2735,9 @@ ${data.second_captain_name ? `
   </select>
 </div>
     
-    <div style="text-align:center; margin-top:22px;">
+    </div>
+
+    <div id="crewChangeSubmitActions" style="text-align:center; margin-top:22px;">
   <button class="btn" type="button" onclick="validateCrewChangeBeforeSubmit()">
     ΣΥΝΕΧΕΙΑ ΣΤΗΝ ΚΑΤΑΧΩΡΗΣΗ ΑΛΛΑΓΗΣ
   </button>
@@ -3719,5 +3721,6 @@ function refreshWosrSelectors() {
 </script>
 </body>
 </html>
+
 
 
