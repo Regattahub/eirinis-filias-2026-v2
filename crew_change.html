@@ -2,6 +2,7 @@
 <html lang="el">
 <head>
   <meta charset="UTF-8" />
+  <meta name="referrer" content="no-referrer" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Αλλαγή Πληρώματος</title>
 <!-- RegattaHub MASTER crew change template -->
@@ -1648,7 +1649,7 @@ function buildCrewTextForPdf() {
 
   return text.trimEnd();
 }
-function boatLookupJsonp(sailNumber) {
+function boatLookupJsonp(sailNumber, submissionId) {
   return new Promise(function (resolve, reject) {
     const callbackName =
       "__boatLookupCallback_" +
@@ -1688,8 +1689,7 @@ function boatLookupJsonp(sailNumber) {
     script.src =
       BOAT_LOOKUP_URL +
       separator +
-     "id=" +
-encodeURIComponent(sailNumber) +
+     (submissionId ? "action=submissionLookup&submissionId=" + encodeURIComponent(submissionId) : "id=" + encodeURIComponent(sailNumber)) +
 "&callback=" +
       encodeURIComponent(callbackName) +
       "&_=" +
@@ -2152,6 +2152,8 @@ async function continueToForm() {
       }
     }
 
+    let directSubmissionLoaded = false;
+
        setupHero();
     loadRaceSettingsFromSheet();
     if (FORM_OPEN === false) {
@@ -2181,7 +2183,8 @@ async function continueToForm() {
       throw new Error("FORM_CLOSED");
     }
 
-    handleCrewEditReturn();
+    if (!hasDirectSubmissionLink()) handleCrewEditReturn();
+    else openDirectSubmission();
 
     searchBtn.addEventListener("click", searchBoat);
     continueBtn.addEventListener("click", showCrewScreen);
@@ -2193,10 +2196,60 @@ async function continueToForm() {
         searchBoat();
       }
     });
+
+function hasDirectSubmissionLink() {
+  return [window.location.search.slice(1), window.location.hash.slice(1)]
+    .some(value => new URLSearchParams(value).has("submissionId"));
+}
+
+function directSubmissionId() {
+  const values = [window.location.search.slice(1), window.location.hash.slice(1)]
+    .flatMap(value => new URLSearchParams(value).getAll("submissionId"));
+  if (values.length !== 1 || !/^\d{10,30}$/.test(values[0])) {
+    throw new Error("Ο σύνδεσμος τροποποίησης δεν είναι έγκυρος. Ανοίξτε ξανά τον σύνδεσμο του email.");
+  }
+  return values[0];
+}
+
+async function openDirectSubmission() {
+  directSubmissionLoaded = false;
+  lastFoundData = null;
+  [".hero", ".separator", ".notice-box", ".search-area", "#eventTitle", "#crewScreen"]
+    .forEach(selector => { const el = document.querySelector(selector); if (el) el.style.display = "none"; });
+  hideResult();
+  statusBox.style.display = "block";
+  setStatus("Φορτώνεται η συμμετοχή σας...", false, true, true);
+  try {
+    const id = directSubmissionId();
+    const json = await boatLookupJsonp("", id);
+    const data = json && json.data;
+    if (!json || !json.ok) throw new Error("Δεν ήταν δυνατή η φόρτωση της συμμετοχής. Δοκιμάστε ξανά ή επικοινωνήστε με τη γραμματεία.");
+    if (!json.found || !data) throw new Error("Η συμμετοχή δεν βρέθηκε ακόμη. Δοκιμάστε ξανά σε λίγο ή επικοινωνήστε με τη γραμματεία.");
+    const editUrl = String(data.submission_edit_url || "");
+    const editMatch = editUrl.match(/^https:\/\/(?:www\.|eu\.|form\.)?jotform\.com\/edit\/(\d+)(?:[?#].*)?$/i);
+    if (json.multiple || String(data.submission_id || "") !== id || !editMatch || editMatch[1] !== id) {
+      throw new Error("Ο σύνδεσμος δεν αντιστοιχεί στη συμμετοχή. Επικοινωνήστε με τη γραμματεία.");
+    }
+    lastFoundData = data;
+    sailInput.value = String(data.sail_number || "");
+    directSubmissionLoaded = true;
+    showCrewScreen();
+    // Keep explicit terms acceptance, on the crew screen instead of the search screen.
+    const termsLabel = document.getElementById("acceptTermsCheck")?.closest("label");
+    if (termsLabel) document.getElementById("crewScreen").appendChild(termsLabel);
+  } catch (error) {
+    directSubmissionLoaded = false;
+    lastFoundData = null;
+    document.getElementById("crewScreen").style.display = "none";
+    statusBox.style.display = "block";
+    setStatus(error.message || "Δεν ήταν δυνατή η φόρτωση της συμμετοχής.", true, false, true);
+  }
+}
+
 function showCrewScreen() {
   const acceptTerms = document.getElementById("acceptTermsCheck");
 
-  if (acceptTerms && !acceptTerms.checked) {
+  if (!directSubmissionLoaded && acceptTerms && !acceptTerms.checked) {
     alert("Παρακαλούμε αποδεχθείτε την Πολιτική Απορρήτου και τους Όρους Χρήσης για να συνεχίσετε.");
     acceptTerms.scrollIntoView({ behavior: "smooth", block: "center" });
     return;
@@ -2464,7 +2517,7 @@ const removeRowsHtml = removableParticipants.length
 
   crewScreen.innerHTML = `
     <h3 style="text-align:center; color:#0d5e92; font-size:26px; margin-bottom:18px;">
-      ΣΤΟΙΧΕΙΑ ΑΡΧΙΚΗΣ ΥΠΟΒΟΛΗΣ
+      Αλλαγή πληρώματος για το: ${esc(data.yacht_name || "σκάφος")}
     </h3>
 
     <div style="border:1px solid #bfb6aa; background:#f8f8f8; padding:14px; margin-bottom:16px; text-align:left;">
@@ -3392,6 +3445,13 @@ function updateWosrRequirement() {
 }
     
   async function validateCrewChangeBeforeSubmit() {
+  const acceptTerms = document.getElementById("acceptTermsCheck");
+  if (acceptTerms && !acceptTerms.checked) {
+    alert("Παρακαλούμε αποδεχθείτε την Πολιτική Απορρήτου και τους Όρους Χρήσης για να συνεχίσετε.");
+    acceptTerms.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+
   const willAdd = document.getElementById("willAddCrew")?.checked || false;
   const willRemove = document.getElementById("willRemoveCrew")?.checked || false;
 
@@ -3659,4 +3719,5 @@ function refreshWosrSelectors() {
 </script>
 </body>
 </html>
+
 
